@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>災害空間変遷アーカイブ・マップ (Beta)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+    <script src="https://cloud.google.com/ai/gen-app-builder/client?hl=ja"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #f4f4f9; }
+        #header { background: #2c3e50; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        #header h1 { margin: 0; font-size: 1.2rem; }
+        .beta-badge { font-size: 0.8rem; font-weight: normal; background: #e74c3c; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+        .view-toggle { display: flex; gap: 10px; }
+        .view-toggle button { padding: 6px 15px; border: none; background: #34495e; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .view-toggle button.active { background: #3498db; }
+        
+        .disclaimer { background: #fff3cd; color: #856404; padding: 10px 20px; font-size: 0.85rem; border-bottom: 1px solid #ffeeba; line-height: 1.4; }
+        
+        #map-container, #list-container { height: calc(100% - 90px); width: 100%; }
+        #map-container { position: relative; display: none; }
+        #list-container { display: block; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+        
+        .leaflet-popup-content { width: 280px !important; margin: 10px; }
+        .popup-img, .card-img { width: 100%; height: 160px; object-fit: cover; border-radius: 4px; margin-bottom: 8px; background: #eee; cursor: pointer; transition: opacity 0.2s; }
+        .popup-img:hover, .card-img:hover { opacity: 0.8; }
+        .popup-title, .card-title { font-weight: bold; font-size: 14px; margin: 0 0 5px 0; }
+        
+        .popup-desc, .card-desc { font-size: 12px; color: #555; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 5px; transition: all 0.3s; }
+        .popup-desc.expanded, .card-desc.expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
+        .toggle-desc-btn { font-size: 11px; color: #3498db; cursor: pointer; border: none; background: none; padding: 0; text-decoration: underline; margin-bottom: 8px; display: inline-block; }
+        .toggle-desc-btn:hover { color: #2980b9; }
+
+        .popup-meta, .card-meta { font-size: 11px; color: #777; }
+        .popup-tag { display: inline-block; background: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 4px; margin-bottom: 4px; }
+        
+        .list-controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .filter-group { margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .filter-group label { font-size: 0.9rem; font-weight: bold; min-width: 80px; }
+        .chip { padding: 5px 12px; border-radius: 15px; background: #eee; border: 1px solid #ddd; cursor: pointer; font-size: 0.85rem; user-select: none; transition: all 0.2s; }
+        .chip.active { background: #3498db !important; color: white !important; border-color: #2980b9 !important; }
+        
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        .card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        .card-content { padding: 12px; flex-grow: 1; }
+        #load-more { display: block; width: 100%; padding: 10px; margin-top: 20px; text-align: center; background: #ddd; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;}
+        #load-more:hover { background: #ccc; }
+        
+        #layer-control { position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 14px; max-width: 250px; }
+        .layer-options { display: flex; flex-direction: column; gap: 8px; }
+        #slider-container { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+        #year-slider { width: 100%; }
+        #year-label { font-weight: bold; text-align: center; margin-bottom: 5px; }
+        .map-warning { font-size: 0.7rem; color: #e74c3c; margin-top: 5px; display:block; line-height: 1.2; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>災害空間変遷アーカイブ <span class="beta-badge">Beta</span></h1>
+        <div class="view-toggle">
+            <button id="btn-list" class="active" onclick="switchView('list')">📋 一覧ビュー</button>
+            <button id="btn-map" onclick="switchView('map')">🗺️ 地図ビュー</button>
+        </div>
+    </div>
+    
+    <div class="disclaimer">
+        <strong>⚠️ データに関する注意事項:</strong> 本アーカイブの位置情報や画像説明文は、AIによる自動解析および当時の提供メタデータを基にしています。そのため、<strong>写っている施設が誤って判定されている</strong>など、事実と異なる情報が含まれる場合があります。あくまで参考資料としてご利用ください。
+    </div>
+
+    <div id="map-container">
+        <div id="map" style="width: 100%; height: 100%;"></div>
+        <div id="layer-control">
+            <div class="layer-options">
+                <label><input type="radio" name="map_layer" value="std" checked onchange="changeLayer()"> 🗺️ 標準地図</label>
+                <label><input type="radio" name="map_layer" value="seamless" onchange="changeLayer()"> 📷 最新航空写真 (全国)</label>
+                <label><input type="radio" name="map_layer" value="yearly" onchange="changeLayer()"> ⏳ 年代別航空写真 (局所的)</label>
+            </div>
+            
+            <div id="slider-container">
+                <div id="year-label">2011年</div>
+                <input type="range" id="year-slider" min="2007" max="2024" value="2011" oninput="updateAerialYear(this.value)">
+                <span class="map-warning">※年代別写真は国土地理院が撮影した地域・年のみ表示されます。<br>※ズームインしないと表示されません。</span>
+            </div>
+
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
+                <div style="font-weight: bold; margin-bottom: 5px; font-size: 12px;">📍 表示データ</div>
+                <label style="display:block; font-size:13px; margin-bottom:4px;"><input type="radio" name="map_dataset" value="all" checked onchange="updateMapMarkers()"> すべて</label>
+                <label style="display:block; font-size:13px; margin-bottom:4px;"><input type="radio" name="map_dataset" value="noto" onchange="updateMapMarkers()"> 能登半島地震</label>
+                <label style="display:block; font-size:13px;"><input type="radio" name="map_dataset" value="higashinihon" onchange="updateMapMarkers()"> 東日本大震災</label>
+            </div>
+        </div>
+    </div>
+
+    <div id="list-container">
+        <div class="list-controls">
+            <div style="margin-bottom: 15px;">
+                <label style="font-size: 0.9rem; font-weight: bold; margin-bottom: 5px; display: block; color: #333;">🔍 即時キーワード検索</label>
+                <input type="text" id="local-search" placeholder="地名や状況を入力 (例: 避難所, 輪島市)" style="width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 15px;" onkeyup="applyFilters()">
+            </div>
+
+            <div class="ai-search-box">
+                <span style="font-size: 0.9rem; font-weight: bold; margin-bottom: 5px; display: block; color: #333;">✨ AI 自然言語検索</span>
+                <gen-search-widget configId="disaster-archive-search_1772952677006" location="global"></gen-search-widget>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            
+            <div class="filter-group" id="ds-filters">
+                <label>データソース:</label>
+                <div class="chip active" onclick="toggleDataset(this, 'all')">すべて</div>
+                <div class="chip" onclick="toggleDataset(this, 'noto')">石川県公式(能登)</div>
+                <div class="chip" onclick="toggleDataset(this, 'shinsai')">国交省 震災伝承館</div>
+                <div class="chip" onclick="toggleDataset(this, 'yahoo')">Yahoo!写真保存P</div>
+            </div>
+            
+            <div class="filter-group" id="category-filters">
+                <label>カテゴリ:</label>
+                <div class="chip active" onclick="toggleCategory(this, 'all')">すべて</div>
+                <div class="chip" onclick="toggleCategory(this, '🌊津波・地震被害')">🌊津波・地震被害</div>
+                <div class="chip" onclick="toggleCategory(this, '🏠避難所・避難生活')">🏠避難所・避難生活</div>
+                <div class="chip" onclick="toggleCategory(this, '🚁救援・支援活動')">🚁救援・支援活動</div>
+                <div class="chip" onclick="toggleCategory(this, '🔧インフラ復旧')">🔧インフラ復旧</div>
+                <div class="chip" onclick="toggleCategory(this, '🏗️まちづくり・復興')">🏗️まちづくり・復興</div>
+                <div class="chip" onclick="toggleCategory(this, '🌱日常の復帰')">🌱日常の復帰</div>
+                <div class="chip" onclick="toggleCategory(this, '📦その他')">📦その他</div>
+            </div>
+        </div>
+        
+        <div class="card-grid" id="card-grid"></div>
+        <button id="load-more" onclick="loadMoreCards()">もっと見る</button>
+    </div>
+
+    <script src="disaster_data_1.js"></script>
+    <script src="disaster_data_2.js"></script>
+    <script src="disaster_data_3.js"></script>
+    <script src="disaster_data_4.js"></script>
+    <script>const DISASTER_DATA = DATA_1.concat(DATA_2, DATA_3, DATA_4);</script>
+    
+    <script>
+        let map, markerCluster;
+        let activeLayer = null;
+        let baseLayer = null;
+        let currentYear = 2011;
+        let filteredData = [];
+        let displayCount = 0;
+        const BATCH_SIZE = 50;
+        let currentDataset = 'all';
+        let currentCategory = 'all';
+
+        window.onload = () => {
+            initMap();
+            filteredData = DISASTER_DATA;
+            renderList();
+            updateMapMarkers();
+        };
+
+        function switchView(view) {
+            document.getElementById('btn-map').classList.toggle('active', view === 'map');
+            document.getElementById('btn-list').classList.toggle('active', view === 'list');
+            document.getElementById('map-container').style.display = view === 'map' ? 'block' : 'none';
+            document.getElementById('list-container').style.display = view === 'list' ? 'block' : 'none';
+            
+            if (view === 'map' && map) {
+                setTimeout(() => { map.invalidateSize(); }, 100);
+            }
+        }
+        
+        window.toggleDesc = function(elementId, btn) {
+            const el = document.getElementById(elementId);
+            if (el.classList.contains('expanded')) {
+                el.classList.remove('expanded');
+                btn.innerText = '続きを読む';
+            } else {
+                el.classList.add('expanded');
+                btn.innerText = '閉じる';
+            }
+        };
+
+        function initMap() {
+            map = L.map('map').setView([37.5, 138.5], 6);
+            
+            baseLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
+            });
+            activeLayer = baseLayer;
+            activeLayer.addTo(map);
+            
+            L.control.locate({ position: "bottomright", flyTo: true, showPopup: false, strings: { title: "現在地を表示" } }).addTo(map);
+
+            markerCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+            map.addLayer(markerCluster);
+        }
+
+        function updateMapMarkers() {
+            markerCluster.clearLayers();
+            
+            const mapDS = document.querySelector('input[name="map_dataset"]:checked').value;
+            
+            const mapData = DISASTER_DATA.filter(d => {
+                if (!d.has_coord || !d.lat || !d.lon) return false;
+                if (mapDS === 'noto' && d.dataset !== 'noto') return false;
+                if (mapDS === 'higashinihon' && (d.dataset !== 'shinsai' && d.dataset !== 'yahoo')) return false;
+                return true;
+            });
+            
+            let markers = [];
+            mapData.forEach(d => {
+                const marker = L.marker([d.lat, d.lon]);
+                
+                let badgeHtml = '';
+                if(d.dataset === 'noto') badgeHtml = '<span class="popup-tag" style="background:#e74c3c;color:white;">能登(石川県)</span>';
+                else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
+                else badgeHtml = '<span class="popup-tag" style="background:#8e44ad;color:white;">東日本(Yahoo)</span>';
+
+                const imgSrc = d.image_full || d.image_thumb;
+                const imgFallback = d.image_thumb || '';
+                const safeDesc = d.desc || '';
+                
+                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-popup-${d.id}', this)">続きを読む</button>` : '';
+                
+                const popupHtml = `
+                    <div class="leaflet-popup-content">
+                        ${imgSrc ? `<a href="${d.link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : ''}
+                        ${badgeHtml}<span class="popup-tag">${d.category_norm || d.category}</span>
+                        <h4 class="popup-title">${d.title}</h4>
+                        <div class="popup-desc" id="desc-popup-${d.id}">${safeDesc}</div>
+                        ${descBtn}
+                        <div class="popup-meta">📍 ${d.spot || ''} <br> 🕐 ${d.phase || '-'}</div>
+                    </div>`;
+                marker.bindPopup(popupHtml);
+                markers.push(marker);
+            });
+            
+            markerCluster.addLayers(markers);
+        }
+
+        function changeLayer() {
+            const mode = document.querySelector('input[name="map_layer"]:checked').value;
+            document.getElementById('slider-container').style.display = (mode === 'yearly') ? 'block' : 'none';
+            
+            if (activeLayer) map.removeLayer(activeLayer);
+            
+            if (mode === 'std') {
+                activeLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
+                });
+            } else if (mode === 'seamless') {
+                activeLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院(最新シームレス)</a>',
+                    maxZoom: 18
+                });
+            } else if (mode === 'yearly') {
+                updateAerialYear(document.getElementById('year-slider').value);
+                return;
+            }
+            activeLayer.addTo(map);
+        }
+
+        function updateAerialYear(year) {
+            currentYear = year;
+            document.getElementById('year-label').innerText = `${year}年`;
+            
+            const mode = document.querySelector('input[name="map_layer"]:checked').value;
+            if (mode !== 'yearly') return;
+
+            if (activeLayer) map.removeLayer(activeLayer);
+            
+            const url = `https://cyberjapandata.gsi.go.jp/xyz/nendophoto${year}/{z}/{x}/{y}.png`;
+            activeLayer = L.tileLayer(url, {
+                attribution: `国土地理院 (${year}年)`,
+                minZoom: 14, maxZoom: 18,
+                errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+            });
+            activeLayer.addTo(map);
+        }
+
+        function toggleDataset(el, dataset) {
+            document.querySelectorAll('#ds-filters .chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            currentDataset = dataset;
+            applyFilters();
+        }
+
+        function toggleCategory(el, cat) {
+            document.querySelectorAll('#category-filters .chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            currentCategory = cat;
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const kw = document.getElementById('local-search').value.toLowerCase();
+            filteredData = DISASTER_DATA.filter(d => {
+                const matchDS = currentDataset === 'all' || d.dataset === currentDataset;
+                const matchCat = currentCategory === 'all' || d.category_norm === currentCategory;
+                const matchKw = kw === '' || (d.title && d.title.toLowerCase().includes(kw)) || 
+                               (d.desc && d.desc.toLowerCase().includes(kw)) || 
+                               (d.spot && d.spot.toLowerCase().includes(kw));
+                return matchDS && matchCat && matchKw;
+            });
+            renderList();
+        }
+
+        function renderList() {
+            displayCount = 0;
+            document.getElementById('card-grid').innerHTML = '';
+            loadMoreCards();
+        }
+
+        function loadMoreCards() {
+            const container = document.getElementById('card-grid');
+            const fragment = document.createDocumentFragment();
+            const nextBatch = filteredData.slice(displayCount, displayCount + BATCH_SIZE);
+            
+            nextBatch.forEach(d => {
+                let badgeHtml = '';
+                if(d.dataset === 'noto') badgeHtml = '<span class="popup-tag" style="background:#e74c3c;color:white;">能登(石川県)</span>';
+                else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
+                else badgeHtml = '<span class="popup-tag" style="background:#8e44ad;color:white;">東日本(Yahoo)</span>';
+
+                const coordBadge = d.has_coord ? '' : '<span class="popup-tag" style="background:#f39c12;color:white;">位置推定不可</span>';
+                const imgSrc = d.image_full || d.image_thumb;
+                const imgFallback = d.image_thumb || '';
+                const safeDesc = d.desc || '';
+                
+                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-card-${d.id}', this)">続きを読む</button>` : '';
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    ${imgSrc ? `<a href="${d.link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="card-img" loading="lazy" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : '<div class="card-img" style="display:flex;align-items:center;justify-content:center;color:#999;">画像なし</div>'}
+                    <div class="card-content">
+                        <div style="margin-bottom:5px;">${badgeHtml}${coordBadge}<span class="popup-tag">${d.category_norm || d.category}</span></div>
+                        <h4 class="card-title">${d.title}</h4>
+                        <div class="card-desc" id="desc-card-${d.id}">${safeDesc}</div>
+                        ${descBtn}
+                        <div class="card-meta">📍 ${d.spot || '不明'} <br> 🕐 ${d.phase || '-'}</div>
+                    </div>
+                `;
+                fragment.appendChild(card);
+            });
+            container.appendChild(fragment);
+            displayCount += nextBatch.length;
+            
+            document.getElementById('load-more').style.display = displayCount >= filteredData.length ? 'none' : 'block';
+            document.getElementById('btn-list').innerText = `📋 一覧ビュー (${filteredData.length}件)`;
+        }
+    </script>
+</body>
+</html>
