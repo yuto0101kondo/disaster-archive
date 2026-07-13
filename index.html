@@ -291,6 +291,19 @@
             }
         };
 
+        // マーカーアイコンを明示定義（iconSize と iconAnchor を画像実寸に一致させる）
+        // marker-icon.png は 25x41px。アンカーは [横中央, 縦下端] = ピンの尖った先端。
+        const MARKER_ICON = L.icon({
+            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+            iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],      // 横: 25/2≒12(中央), 縦: 41(下端=先端)
+            popupAnchor: [0, -41],     // 吹き出しがピン先端の真上から出る
+            shadowSize: [41, 41],
+            shadowAnchor: [12, 41]     // 影もピン先端基準で揃える
+        });
+
         function initMap() {
             map = L.map('map').setView([37.5, 138.5], 6);
             
@@ -302,7 +315,25 @@
             
             L.control.locate({ position: "bottomright", flyTo: true, showPopup: false, strings: { title: "現在地を表示" } }).addTo(map);
 
-            markerCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+            markerCluster = L.markerClusterGroup({
+                chunkedLoading: true,
+                maxClusterRadius: 50,
+                // クラスターアイコンも iconSize/iconAnchor を明示（40x40の円形バッジを
+                // 座標の真上に中心合わせ。デフォルトの暗黙センタリングに頼らない）
+                iconCreateFunction: function (cluster) {
+                    const count = cluster.getChildCount();
+                    let sizeClass = ' marker-cluster-';
+                    if (count < 10) sizeClass += 'small';
+                    else if (count < 100) sizeClass += 'medium';
+                    else sizeClass += 'large';
+                    return L.divIcon({
+                        html: '<div><span>' + count + '</span></div>',
+                        className: 'marker-cluster' + sizeClass,
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]   // 円の中心 = クラスター重心
+                    });
+                }
+            });
             map.addLayer(markerCluster);
         }
 
@@ -319,7 +350,7 @@
             
             let markers = [];
             mapData.forEach(d => {
-                const marker = L.marker([d.lat, d.lon]);
+                const marker = L.marker([d.lat, d.lon], { icon: MARKER_ICON });
                 let badgeHtml = '';
                 if(d.dataset === 'noto') badgeHtml = '<span class="popup-tag" style="background:#e74c3c;color:white;">能登(石川県)</span>';
                 else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
