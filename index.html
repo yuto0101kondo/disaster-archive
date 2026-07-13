@@ -63,6 +63,12 @@
         #year-label { font-weight: bold; text-align: center; margin-bottom: 5px; }
         .map-warning { font-size: 0.7rem; color: #e74c3c; margin-top: 5px; display:block; line-height: 1.2; }
 
+        /* 位置精度によるピンの色分け（デフォルトの青ピン画像に filter を適用） */
+        .pin-area { filter: hue-rotate(160deg) saturate(1.5) brightness(1.05); }   /* 橙系: 地区代表点 */
+        .pin-uncertain { filter: grayscale(1) brightness(1.15); }                   /* 灰色: 推定 */
+        .precision-legend { font-size: 12px; line-height: 1.7; }
+        .precision-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
         .leaflet-popup-content-wrapper { background: var(--panel-bg); color: var(--text-color); }
         .leaflet-popup-tip { background: var(--panel-bg); }
         .leaflet-popup-content { width: 280px !important; margin: 10px; }
@@ -150,6 +156,15 @@
                     <label style="display:block; font-size:13px; margin-bottom:4px;"><input type="radio" name="map_dataset" value="all" checked onchange="updateMapMarkers()"> すべて</label>
                     <label style="display:block; font-size:13px; margin-bottom:4px;"><input type="radio" name="map_dataset" value="noto" onchange="updateMapMarkers()"> 能登半島地震</label>
                     <label style="display:block; font-size:13px;"><input type="radio" name="map_dataset" value="higashinihon" onchange="updateMapMarkers()"> 東日本大震災</label>
+                </div>
+
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+                    <div style="font-weight: bold; margin-bottom: 5px; font-size: 12px;">🎯 位置精度</div>
+                    <div class="precision-legend">
+                        <span class="dot" style="background:#2A81CB;"></span>施設・ランドマーク単位<br>
+                        <span class="dot" style="background:#E8794A;"></span>地区・町名の代表点<br>
+                        <span class="dot" style="background:#9e9e9e;"></span>推定（精度低）
+                    </div>
                 </div>
             </div>
         </div>
@@ -293,7 +308,7 @@
 
         // マーカーアイコンを明示定義（iconSize と iconAnchor を画像実寸に一致させる）
         // marker-icon.png は 25x41px。アンカーは [横中央, 縦下端] = ピンの尖った先端。
-        const MARKER_ICON = L.icon({
+        const ICON_BASE = {
             iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
             iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
             shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
@@ -302,7 +317,16 @@
             popupAnchor: [0, -41],     // 吹き出しがピン先端の真上から出る
             shadowSize: [41, 41],
             shadowAnchor: [12, 41]     // 影もピン先端基準で揃える
-        });
+        };
+        // 位置精度(loc_precision)別のアイコン。色は CSS filter で変える(位置調整は iconAnchor に統一)
+        const MARKER_ICON = L.icon(ICON_BASE);                                              // building: 青
+        const MARKER_ICON_AREA = L.icon({ ...ICON_BASE, className: 'pin-area' });           // area-centroid: 橙
+        const MARKER_ICON_UNCERTAIN = L.icon({ ...ICON_BASE, className: 'pin-uncertain' }); // uncertain: 灰
+        const PRECISION_META = {
+            'building':      { icon: () => MARKER_ICON,           opacity: 1.0,  label: '🎯施設単位' },
+            'area-centroid': { icon: () => MARKER_ICON_AREA,      opacity: 1.0,  label: '📍地区代表点' },
+            'uncertain':     { icon: () => MARKER_ICON_UNCERTAIN, opacity: 0.65, label: '❓位置推定' }
+        };
 
         function initMap() {
             map = L.map('map').setView([37.5, 138.5], 6);
@@ -350,7 +374,8 @@
             
             let markers = [];
             mapData.forEach(d => {
-                const marker = L.marker([d.lat, d.lon], { icon: MARKER_ICON });
+                const prec = PRECISION_META[d.loc_precision] || PRECISION_META['uncertain'];
+                const marker = L.marker([d.lat, d.lon], { icon: prec.icon(), opacity: prec.opacity });
                 let badgeHtml = '';
                 if(d.dataset === 'noto') badgeHtml = '<span class="popup-tag" style="background:#e74c3c;color:white;">能登(石川県)</span>';
                 else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
@@ -364,7 +389,7 @@
                 const popupHtml = `
                     <div class="leaflet-popup-content">
                         ${imgSrc ? `<a href="${d.link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : ''}
-                        ${badgeHtml}<span class="popup-tag">${d.category_norm || d.category}</span>
+                        ${badgeHtml}<span class="popup-tag">${d.category_norm || d.category}</span><span class="popup-tag">${prec.label}</span>
                         <h4 class="popup-title">${d.title}</h4>
                         <div class="popup-desc" id="desc-popup-${d.id}">${safeDesc}</div>
                         ${descBtn}
@@ -450,7 +475,10 @@
                 else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
                 else badgeHtml = '<span class="popup-tag" style="background:#8e44ad;color:white;">東日本(Yahoo)</span>';
 
-                const coordBadge = d.has_coord ? '' : '<span class="popup-tag" style="background:#f39c12;color:white;">位置推定不可</span>';
+                const cardPrec = PRECISION_META[d.loc_precision] || PRECISION_META['uncertain'];
+                const coordBadge = d.has_coord
+                    ? `<span class="popup-tag">${cardPrec.label}</span>`
+                    : '<span class="popup-tag" style="background:#f39c12;color:white;">位置推定不可</span>';
                 const imgSrc = d.image_full || d.image_thumb;
                 const imgFallback = d.image_thumb || '';
                 const safeDesc = d.desc || '';
