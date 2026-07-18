@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 tools/geocode_cache.json
 tools/latest.csv
+tools/geocode_cache_v2.json
+tools/*_run*.log
+tools/regeocode_report.txt
+tools/sea_check_run.log
+.DS_Store
