@@ -11,7 +11,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
-    <script src="https://cloud.google.com/ai/gen-app-builder/client?hl=ja"></script>
+    <script async src="https://cloud.google.com/ai/gen-app-builder/client?hl=ja"></script>
     <style>
         :root {
             --bg-color: #f4f4f9; --text-color: #333; --header-bg: #2c3e50; --header-text: #fff;
@@ -161,9 +161,10 @@
                 <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);">
                     <div style="font-weight: bold; margin-bottom: 5px; font-size: 12px;">🎯 位置精度</div>
                     <div class="precision-legend">
-                        <span class="dot" style="background:#2A81CB;"></span>施設・ランドマーク単位<br>
-                        <span class="dot" style="background:#E8794A;"></span>地区・町名の代表点<br>
-                        <span class="dot" style="background:#9e9e9e;"></span>推定（精度低）
+                        <label style="display:block;"><input type="radio" name="map_precision" value="all" checked onchange="setPrecisionFromMap(this.value)"> すべて表示</label>
+                        <label style="display:block;"><input type="radio" name="map_precision" value="building" onchange="setPrecisionFromMap(this.value)"> <span class="dot" style="background:#2A81CB;"></span>施設・ランドマーク単位</label>
+                        <label style="display:block;"><input type="radio" name="map_precision" value="area-centroid" onchange="setPrecisionFromMap(this.value)"> <span class="dot" style="background:#E8794A;"></span>地区・町名の代表点</label>
+                        <label style="display:block;"><input type="radio" name="map_precision" value="uncertain" onchange="setPrecisionFromMap(this.value)"> <span class="dot" style="background:#9e9e9e;"></span>推定（精度低）</label>
                     </div>
                 </div>
             </div>
@@ -193,6 +194,14 @@
                 <div class="chip" onclick="toggleDataset(this, 'yahoo')">Yahoo!</div>
             </div>
             
+            <div class="filter-group" id="precision-filters">
+                <label>位置精度:</label>
+                <div class="chip active" onclick="setPrecision(this, 'all')">すべて</div>
+                <div class="chip" onclick="setPrecision(this, 'building')">🎯施設単位</div>
+                <div class="chip" onclick="setPrecision(this, 'area-centroid')">📍地区代表点</div>
+                <div class="chip" onclick="setPrecision(this, 'uncertain')">❓推定</div>
+            </div>
+
             <div class="filter-group" id="category-filters">
                 <label>カテゴリ:</label>
                 <div class="chip active" onclick="toggleCategory(this, 'all')">すべて</div>
@@ -222,13 +231,8 @@
         </div>
     </div>
 
-    <script src="disaster_data_1.js"></script>
-    <script src="disaster_data_2.js"></script>
-    <script src="disaster_data_3.js"></script>
-    <script src="disaster_data_4.js"></script>
-    <script>const DISASTER_DATA = DATA_1.concat(DATA_2, DATA_3, DATA_4);</script>
-    
     <script>
+        let DISASTER_DATA = [];
         let map, markerCluster;
         let activeLayer = null;
         let baseLayer = null;
@@ -238,6 +242,13 @@
         const BATCH_SIZE = 50;
         let currentDataset = 'all';
         let currentCategory = 'all';
+        let currentPrecision = 'all';
+
+        // XSS対策: データ由来の文字列は必ずエスケープして挿入する
+        const esc = s => String(s ?? '').replace(/[&<>"']/g,
+            c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        // URLは http(s) のみ許可
+        const safeUrl = u => /^https?:\/\//.test(String(u ?? '')) ? esc(u) : '';
 
         function showLoader(mainText, subText) {
             const loader = document.getElementById('loading-screen');
@@ -252,17 +263,39 @@
             setTimeout(() => { loader.style.display = 'none'; }, 300);
         }
 
-        window.onload = () => {
-            initMap();
-            filteredData = DISASTER_DATA;
-            renderList();
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src; s.onload = resolve; s.onerror = reject;
+                document.head.appendChild(s);
+            });
+        }
+
+        // データを1ファイルずつ段階的に読み込み、最初のチャンクで操作可能にする
+        async function loadData() {
+            const parts = ['disaster_data_1.js', 'disaster_data_2.js', 'disaster_data_3.js', 'disaster_data_4.js'];
+            for (let i = 0; i < parts.length; i++) {
+                await loadScript(parts[i]);
+                DISASTER_DATA = DISASTER_DATA.concat(window['DATA_' + (i + 1)]);
+                applyFilters();
+                if (i === 0) hideLoader();  // 最初のチャンクで操作可能に。残りは背景で読み込む
+                document.getElementById('btn-list').innerText =
+                    i < parts.length - 1 ? `📋 一覧 (${filteredData.length}件・読込中${i + 1}/4)`
+                                         : `📋 一覧 (${filteredData.length}件)`;
+            }
             updateMapMarkers();
-            
+        }
+
+        window.onload = async () => {
+            initMap();
             if (window.innerWidth <= 768) {
                 document.getElementById('layer-control').classList.add('collapsed');
             }
-            
-            hideLoader();
+            try {
+                await loadData();
+            } catch (e) {
+                showLoader('データの読み込みに失敗しました', '通信環境をご確認のうえ再読み込みしてください');
+            }
         };
 
         function executeSearch() {
@@ -369,6 +402,7 @@
                 if (!d.has_coord || !d.lat || !d.lon) return false;
                 if (mapDS === 'noto' && d.dataset !== 'noto') return false;
                 if (mapDS === 'higashinihon' && (d.dataset !== 'shinsai' && d.dataset !== 'yahoo')) return false;
+                if (currentPrecision !== 'all' && (d.loc_precision || 'uncertain') !== currentPrecision) return false;
                 return true;
             });
             
@@ -381,19 +415,21 @@
                 else if(d.dataset === 'shinsai') badgeHtml = '<span class="popup-tag" style="background:#2980b9;color:white;">東日本(国交省)</span>';
                 else badgeHtml = '<span class="popup-tag" style="background:#8e44ad;color:white;">東日本(Yahoo)</span>';
 
-                const imgSrc = d.image_full || d.image_thumb;
-                const imgFallback = d.image_thumb || '';
-                const safeDesc = d.desc || '';
-                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-popup-${d.id}', this)">続きを読む</button>` : '';
-                
+                const imgSrc = safeUrl(d.image_full || d.image_thumb);
+                const imgFallback = safeUrl(d.image_thumb);
+                const link = safeUrl(d.link);
+                const safeDesc = esc(d.desc);
+                const safeId = esc(d.id);
+                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-popup-${safeId}', this)">続きを読む</button>` : '';
+
                 const popupHtml = `
-                    <div class="leaflet-popup-content">
-                        ${imgSrc ? `<a href="${d.link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : ''}
-                        ${badgeHtml}<span class="popup-tag">${d.category_norm || d.category}</span><span class="popup-tag">${prec.label}</span>
-                        <h4 class="popup-title">${d.title}</h4>
-                        <div class="popup-desc" id="desc-popup-${d.id}">${safeDesc}</div>
+                    <div>
+                        ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : ''}
+                        ${badgeHtml}<span class="popup-tag">${esc(d.category_norm || d.category)}</span><span class="popup-tag">${prec.label}</span>
+                        <h4 class="popup-title">${esc(d.title)}</h4>
+                        <div class="popup-desc" id="desc-popup-${safeId}">${safeDesc}</div>
                         ${descBtn}
-                        <div class="popup-meta">📍 ${d.spot || ''} <br> 🕐 ${d.phase || '-'}</div>
+                        <div class="popup-meta">📍 ${esc(d.spot)} <br> 🕐 ${esc(d.phase || '-')}</div>
                     </div>`;
                 marker.bindPopup(popupHtml);
                 markers.push(marker);
@@ -438,6 +474,25 @@
             executeSearch();
         }
 
+        function setPrecision(el, p) {
+            currentPrecision = p;
+            document.querySelectorAll('#precision-filters .chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            const radio = document.querySelector(`input[name="map_precision"][value="${p}"]`);
+            if (radio) radio.checked = true;
+            executeSearch();
+            updateMapMarkers();
+        }
+
+        function setPrecisionFromMap(p) {
+            currentPrecision = p;
+            document.querySelectorAll('#precision-filters .chip').forEach((c, i) => {
+                c.classList.toggle('active', ['all', 'building', 'area-centroid', 'uncertain'][i] === p);
+            });
+            executeSearch();
+            updateMapMarkers();
+        }
+
         function toggleCategory(el, cat) {
             document.querySelectorAll('#category-filters .chip').forEach(c => c.classList.remove('active'));
             el.classList.add('active');
@@ -450,10 +505,11 @@
             filteredData = DISASTER_DATA.filter(d => {
                 const matchDS = currentDataset === 'all' || d.dataset === currentDataset;
                 const matchCat = currentCategory === 'all' || d.category_norm === currentCategory;
-                const matchKw = kw === '' || (d.title && d.title.toLowerCase().includes(kw)) || 
-                               (d.desc && d.desc.toLowerCase().includes(kw)) || 
+                const matchPrec = currentPrecision === 'all' || (d.loc_precision || 'uncertain') === currentPrecision;
+                const matchKw = kw === '' || (d.title && d.title.toLowerCase().includes(kw)) ||
+                               (d.desc && d.desc.toLowerCase().includes(kw)) ||
                                (d.spot && d.spot.toLowerCase().includes(kw));
-                return matchDS && matchCat && matchKw;
+                return matchDS && matchCat && matchPrec && matchKw;
             });
             renderList();
         }
@@ -479,21 +535,23 @@
                 const coordBadge = d.has_coord
                     ? `<span class="popup-tag">${cardPrec.label}</span>`
                     : '<span class="popup-tag" style="background:#f39c12;color:white;">位置推定不可</span>';
-                const imgSrc = d.image_full || d.image_thumb;
-                const imgFallback = d.image_thumb || '';
-                const safeDesc = d.desc || '';
-                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-card-${d.id}', this)">続きを読む</button>` : '';
+                const imgSrc = safeUrl(d.image_full || d.image_thumb);
+                const imgFallback = safeUrl(d.image_thumb);
+                const link = safeUrl(d.link);
+                const safeDesc = esc(d.desc);
+                const safeId = esc(d.id);
+                const descBtn = safeDesc.length > 60 ? `<button class="toggle-desc-btn" onclick="toggleDesc('desc-card-${safeId}', this)">続きを読む</button>` : '';
 
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.innerHTML = `
-                    ${imgSrc ? `<a href="${d.link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="card-img" loading="lazy" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : '<div class="card-img" style="display:flex;align-items:center;justify-content:center;color:var(--secondary-text);">画像なし</div>'}
+                    ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="card-img" loading="lazy" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : '<div class="card-img" style="display:flex;align-items:center;justify-content:center;color:var(--secondary-text);">画像なし</div>'}
                     <div class="card-content">
-                        <div style="margin-bottom:5px;">${badgeHtml}${coordBadge}<span class="popup-tag">${d.category_norm || d.category}</span></div>
-                        <h4 class="card-title">${d.title}</h4>
-                        <div class="card-desc" id="desc-card-${d.id}">${safeDesc}</div>
+                        <div style="margin-bottom:5px;">${badgeHtml}${coordBadge}<span class="popup-tag">${esc(d.category_norm || d.category)}</span></div>
+                        <h4 class="card-title">${esc(d.title)}</h4>
+                        <div class="card-desc" id="desc-card-${safeId}">${safeDesc}</div>
                         ${descBtn}
-                        <div class="card-meta">📍 ${d.spot || '不明'} <br> 🕐 ${d.phase || '-'}</div>
+                        <div class="card-meta">📍 ${esc(d.spot || '不明')} <br> 🕐 ${esc(d.phase || '-')}</div>
                     </div>
                 `;
                 fragment.appendChild(card);
