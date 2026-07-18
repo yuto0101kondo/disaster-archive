@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
 tools/geocode_cache.json
+tools/latest.csv
