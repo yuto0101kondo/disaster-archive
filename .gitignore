@@ -14,3 +14,4 @@ tools/sea_repair_dryrun.log
 tools/rebuild_report.txt
 tools/rebuild_desc_report.txt
 tools/fix_gated_report.txt
+tools/fix_outside_report.txt
