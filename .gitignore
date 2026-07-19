@@ -1,3 +1,16 @@
 __pycache__/
 *.pyc
 tools/geocode_cache.json
+tools/latest.csv
+tools/geocode_cache_v2.json
+tools/*_run*.log
+tools/regeocode_report.txt
+tools/sea_check_run.log
+.DS_Store
+tools/sea_check_cache.json
+tools/sea_points_report.json
+tools/sea_repair_report.txt
+tools/sea_repair_dryrun.log
+tools/rebuild_report.txt
+tools/rebuild_desc_report.txt
+tools/fix_gated_report.txt
