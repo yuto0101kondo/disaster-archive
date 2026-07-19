@@ -7,3 +7,7 @@ tools/*_run*.log
 tools/regeocode_report.txt
 tools/sea_check_run.log
 .DS_Store
+tools/sea_check_cache.json
+tools/sea_points_report.json
+tools/sea_repair_report.txt
+tools/sea_repair_dryrun.log

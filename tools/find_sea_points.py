@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-東日本大震災データ(yahoo/shinsai)の座標が海上に落ちていないかを
+全データセット(yahoo/shinsai/noto)の座標が海上に落ちていないかを
 国土地理院 逆ジオコーディングAPIで判定する。
 
 1次判定: 座標そのもので逆ジオコーディング。陸地上の住所が引ける座標は
   {"results": {...}} を返し、海上・陸地DB外の座標は {} を返す。
 2次判定: 1次判定で「陸地DB外」となった座標について、周囲を同心円状に
-  探索し最寄りの陸地(住所が引ける地点)までのおおよその距離を求める。
-  港湾施設・水門・海岸の駅など、正当に海際にあるスポットは数百m以内に
-  陸地が見つかるはずなので、これらを「海上ズレ」の誤検知から除外する。
-  目安: 陸地まで2km超 → 海上ズレの可能性が高い
+  探索し最寄りの陸地(住所が引ける地点)までのおおよその距離と、最初に
+  見つかった陸地点の座標を求める。港湾施設・水門・海岸の駅など、正当に
+  海際にあるスポットは数百m以内に陸地が見つかる。
 
-結果は tools/sea_points_report.json に書き出す(中断再開可能)。
+陸地DB外の全座標を距離つきで tools/sea_points_report.json に書き出す
+(修正時の閾値判断は後段に委ねる)。キャッシュにより中断再開可能。
 """
 import json
 import math
@@ -85,23 +85,23 @@ def offset(lat, lon, dist_km, bearing_deg):
 
 
 def nearest_land_km(th, lat, lon):
-    """周囲を同心円状に探索し、最寄りの陸地までの距離(km)を返す。
-    見つからなければ最大探索半径を返す(=それ以上遠い、という意味)。
+    """周囲を同心円状に探索し、(最寄り陸地までの距離km, 陸地点lat, 陸地点lon)
+    を返す。見つからなければ (最大探索半径, None, None)。
     """
     for radius, n_dirs in RINGS:
         for i in range(n_dirs):
             bearing = 360.0 * i / n_dirs
             plat, plon = offset(lat, lon, radius, bearing)
             if th.check(plat, plon):
-                return radius
-    return RINGS[-1][0]  # 最大探索半径を超えても見つからず
+                return radius, round(plat, 6), round(plon, 6)
+    return RINGS[-1][0], None, None  # 最大探索半径を超えても見つからず
 
 
 def main():
     files, data = load_all()
     coords = {}
     for d in data:
-        if d.get('has_coord') and d['dataset'] in ('yahoo', 'shinsai'):
+        if d.get('has_coord'):
             key = (round(d['lat'], 5), round(d['lon'], 5))
             coords.setdefault(key, []).append(d['id'])
 
@@ -127,21 +127,26 @@ def main():
         n_checked += 1
         if on_land is False:
             n_stage1_flagged += 1
-            dist = nearest_land_km(th, lat, lon)
-            if dist > FAR_THRESHOLD_KM:
-                sea_points.append({'lat': lat, 'lon': lon, 'ids': ids, 'nearest_land_km': dist})
+            dist, land_lat, land_lon = nearest_land_km(th, lat, lon)
+            sea_points.append({'lat': lat, 'lon': lon, 'ids': ids,
+                               'nearest_land_km': dist,
+                               'nearest_land': ([land_lat, land_lon]
+                                                if land_lat is not None else None)})
         if th.n_new and th.n_new % 2000 == 0:
             with open(CACHE_PATH, 'w', encoding='utf-8') as f:
                 json.dump(cache, f, ensure_ascii=False)
+            with open(REPORT_PATH, 'w', encoding='utf-8') as f:
+                json.dump(sea_points, f, ensure_ascii=False, indent=1)
             print(f'... {n_checked}/{len(coords)} coords checked, '
-                  f'{n_stage1_flagged} stage1-flagged, {len(sea_points)} confirmed far-from-land '
+                  f'{n_stage1_flagged} stage1-flagged '
                   f'(API calls so far: {th.n_new})', flush=True)
 
     with open(CACHE_PATH, 'w', encoding='utf-8') as f:
         json.dump(cache, f, ensure_ascii=False)
 
+    n_far = sum(1 for p in sea_points if p['nearest_land_km'] > FAR_THRESHOLD_KM)
     print(f'\nチェック済み座標: {n_checked}, 陸地DB外(1次): {n_stage1_flagged}, '
-          f'陸地まで{FAR_THRESHOLD_KM}km超(確定): {len(sea_points)}')
+          f'陸地まで{FAR_THRESHOLD_KM}km超: {n_far}')
     sea_points.sort(key=lambda x: -x['nearest_land_km'])
     with open(REPORT_PATH, 'w', encoding='utf-8') as f:
         json.dump(sea_points, f, ensure_ascii=False, indent=1)
