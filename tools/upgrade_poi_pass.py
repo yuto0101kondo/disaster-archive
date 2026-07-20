@@ -32,7 +32,13 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, 'tools'))
 
 from regeocode import (Geocoder, classify, build_query_text,  # noqa: E402
-                       NOMINATIM_POI_CLASSES, in_japan)
+                       NOMINATIM_POI_CLASSES, in_japan, MUNI_ONLY_TEXT_RE,
+                       MUNI_WITH_PREF_RE)
+
+# 第2弾(--wave2)では水域地物(湾の中心=海上座標)を採用しない
+WATER_TYPES = {'bay', 'water', 'strait', 'sea', 'river', 'stream', 'coastline',
+               'beach', 'wetland'}
+WATER_SPOT_RE = re.compile(r'湾$|沖$|海域|海上|川$|河口$')
 from snap_to_town_centroid import dist_km  # noqa: E402
 
 REPORT_PATH = os.path.join(BASE, 'tools', 'upgrade_poi_report.txt')
@@ -45,7 +51,7 @@ def norm(s):
     return s.replace('ヶ', 'ケ').replace('が', 'ケ').replace('ガ', 'ケ')
 
 
-def find_poi(geo, query, anchor_lat, anchor_lon):
+def find_poi(geo, query, anchor_lat, anchor_lon, allow_water=True):
     """施設名単体クエリ + 30km地理ゲートでPOIを探す。
     戻り値: (lat, lon, source, note) または None"""
     nq = norm(query)
@@ -55,6 +61,9 @@ def find_poi(geo, query, anchor_lat, anchor_lon):
         for cand in res:
             if cand.get('class') not in NOMINATIM_POI_CLASSES:
                 continue
+            if not allow_water and (cand.get('class') in ('natural', 'waterway')
+                                    or cand.get('type') in WATER_TYPES):
+                continue
             dn = cand.get('display_name', '')
             if nq not in norm(dn) and nq != norm(cand.get('name', '')):
                 continue
@@ -63,7 +72,7 @@ def find_poi(geo, query, anchor_lat, anchor_lon):
                 continue
             if dist_km(lat, lon, anchor_lat, anchor_lon) > GATE_KM:
                 continue
-            return lat, lon, 'osm-poi', dn[:60]
+            return lat, lon, 'building', 'osm-poi', dn[:60]
 
     res = geo.gsi(query)
     if res:
@@ -77,7 +86,14 @@ def find_poi(geo, query, anchor_lat, anchor_lon):
                 continue
             if dist_km(lat, lon, anchor_lat, anchor_lon) > GATE_KM:
                 continue
-            return lat, lon, 'gsi-poi', title[:60]
+            # 住所タイトルの場合、番地・丁目レベルなら建物精度相当、
+            # 大字レベルなら区域代表点にとどまる
+            nt = unicodedata.normalize('NFKC', title)
+            if MUNI_WITH_PREF_RE.match(title) and not re.search(r'[0-9０-９]+番|番地|丁目', nt):
+                prec = 'area-centroid'
+            else:
+                prec = 'building'
+            return lat, lon, prec, 'gsi-poi', title[:60]
     return None
 
 
@@ -86,6 +102,9 @@ def main():
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--checkpoint-every', type=int, default=500)
+    ap.add_argument('--wave2', action='store_true',
+                    help='classify=building 以外の area-centroid spot を対象にする'
+                         '(市町村名のみ・nan・水域名は除外、水域地物は不採用)')
     args = ap.parse_args()
 
     geo = Geocoder()
@@ -101,7 +120,16 @@ def main():
         for d in data:
             if d.get('loc_precision') == 'area-centroid' and d.get('has_coord'):
                 spot = (d.get('spot') or '').strip()
-                if spot and classify(spot) == 'building':
+                if not spot or spot == 'nan':
+                    continue
+                is_building = classify(spot) == 'building'
+                if args.wave2:
+                    ns = unicodedata.normalize('NFKC', spot)
+                    if (is_building or MUNI_ONLY_TEXT_RE.match(ns)
+                            or WATER_SPOT_RE.search(spot)):
+                        continue
+                    groups[(d['dataset'], spot)].append(d)
+                elif is_building:
                     groups[(d['dataset'], spot)].append(d)
 
     items = list(groups.items())
@@ -124,15 +152,16 @@ def main():
 
     for i, ((ds, spot), recs) in enumerate(items):
         anchor = (recs[0]['lat'], recs[0]['lon'])
-        r = find_poi(geo, build_query_text(spot), anchor[0], anchor[1])
+        r = find_poi(geo, build_query_text(spot), anchor[0], anchor[1],
+                     allow_water=not args.wave2)
         if r:
-            lat, lon, src, note = r
+            lat, lon, prec, src, note = r
             for d in recs:
                 d['lat'], d['lon'] = round(lat, 6), round(lon, 6)
-                d['loc_precision'] = 'building'
+                d['loc_precision'] = prec
             n_up += len(recs)
             report.append(f'UP [{ds}] "{spot}" ({len(recs)}件) '
-                          f'{anchor} -> ({lat:.6f},{lon:.6f}) {src} "{note}"')
+                          f'{anchor} -> ({lat:.6f},{lon:.6f},{prec}) {src} "{note}"')
         else:
             n_miss += len(recs)
             report.append(f'MISS [{ds}] "{spot}" ({len(recs)}件)')
