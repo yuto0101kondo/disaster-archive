@@ -1,17 +1,17 @@
 # ひなぎく突合 検証レポート
 
-- ひなぎく yahoo_shinsai 収穫件数: **27503** (photo_id重複 0)
+- ひなぎく yahoo_shinsai 収穫件数: **47071** (photo_id重複 0)
 - 当アーカイブ yahoo レコード: **35969**
 
 ## 一致率
 
-- ID完全一致: **20674件 (57.5%)**
-- 不一致: 15295件 (42.5%)
-- 不一致ID例 (先頭30件): yahoo_80715_sr, yahoo_65398_sr, yahoo_66435_sr, yahoo_66436_sr, yahoo_66437_sr, yahoo_66438_sr, yahoo_66439_sr, yahoo_66440_sr, yahoo_66441_sr, yahoo_66442_sr, yahoo_64435_sr, yahoo_64434_sr, yahoo_64300_sr, yahoo_61725_sr, yahoo_61724_sr, yahoo_61723_sr, yahoo_60840_sr, yahoo_60842_sr, yahoo_60838_sr, yahoo_60989_sr, yahoo_60836_sr, yahoo_60845_sr, yahoo_60837_sr, yahoo_67648_sr, yahoo_67646_sr, yahoo_67645_sr, yahoo_67644_sr, yahoo_67643_sr, yahoo_62005_sr, yahoo_67640_sr
+- ID完全一致: **35889件 (99.8%)**
+- 不一致: 80件 (0.2%)
+- 不一致ID例 (先頭30件): yahoo_31013_sr, yahoo_68018_sr, yahoo_22036_sr, yahoo_22034_sr, yahoo_22033_sr, yahoo_22024_sr, yahoo_22021_sr, yahoo_22020_sr, yahoo_20329_sr, yahoo_20331_sr, yahoo_20219_sr, yahoo_16700_sr, yahoo_10211_sr, yahoo_10210_sr, yahoo_12222_sr, yahoo_8300_sr, yahoo_6710_sr, yahoo_6709_sr, yahoo_12113_sr, yahoo_9105_sr, yahoo_4114_sr, yahoo_3400_sr, yahoo_268_sr, yahoo_267_sr, yahoo_266_sr, yahoo_5006_sr, yahoo_454_sr, yahoo_2071_sr, yahoo_1044_sr, yahoo_68309_sr
 
 ## 座標
 
-- ひなぎく側に座標あり: 20674件 (100.0%)
+- ひなぎく側に座標あり: 35889件 (100.0%)
 - 座標が新規に付与されるレコード: **0件**
 - 既存座標からの移動距離: 中央値 0.00km / 90%ile 0.00km / 2km超 0件
   (移動距離が大きい = 従来のテキスト由来座標が粗かったことを意味する)
@@ -22,18 +22,18 @@
 
 ## タイトル
 
-- 完全一致: 20674件 / 差分あり: 0件
+- 完全一致: 35889件 / 差分あり: 0件
   (当アーカイブ側は生成時に短縮・加工されているため差分が正常)
 
 ## provider 分布
 
-- ヤフー株式会社: 20674件
+- ヤフー株式会社: 35889件
 
 ## tag 分布
 
-- 風景: 19911件
-- 震災後: 11108件
-- 震災前: 9566件
-- 人物: 1267件
-- その他: 770件
-- 物: 336件
+- 風景: 34546件
+- 震災後: 25142件
+- 震災前: 10747件
+- 人物: 2229件
+- その他: 1295件
+- 物: 589件
