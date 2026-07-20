@@ -18,3 +18,6 @@ tools/fix_outside_report.txt
 tools/upgrade_poi_report.txt
 tools/fix_address_report.txt
 tools/hinagiku_survey_result.json
+.venv/
+raw/
+images/
