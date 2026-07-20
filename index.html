@@ -76,6 +76,9 @@
         .cluster-list-item .cl-title { font-size: 12px; font-weight: bold; line-height: 1.3; }
         .cluster-list-item .cl-meta { font-size: 11px; color: var(--secondary-text); }
         .cluster-list-more { font-size: 11px; color: var(--secondary-text); text-align: center; padding: 6px; }
+        /* 画像消失時(提供元アーカイブ終了等)のフォールバック表示 */
+        .img-missing { width: 100%; height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: var(--border-color); border-radius: 4px; margin-bottom: 8px; font-size: 12px; color: var(--secondary-text); text-align: center; line-height: 1.5; }
+
         .precision-legend { font-size: 12px; line-height: 1.7; }
         .precision-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 
@@ -259,6 +262,20 @@
             c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         // URLは http(s) のみ許可
         const safeUrl = u => /^https?:\/\//.test(String(u ?? '')) ? esc(u) : '';
+
+        // 画像読み込み失敗時のフォールバック: サムネイル→案内表示の順に切替
+        // (提供元アーカイブの終了で画像が消えても壊れた画像アイコンを出さない)
+        window.imgFail = function (img, fallback) {
+            if (fallback && img.src !== fallback && !img.dataset.fb) {
+                img.dataset.fb = '1';
+                img.src = fallback;
+                return;
+            }
+            const ph = document.createElement('div');
+            ph.className = 'img-missing';
+            ph.innerHTML = '🖼️ 画像を読み込めませんでした<br>クリックで提供元アーカイブを開きます';
+            img.replaceWith(ph);
+        };
 
         function showLoader(mainText, subText) {
             const loader = document.getElementById('loading-screen');
@@ -490,7 +507,7 @@
 
                 const popupHtml = `
                     <div>
-                        ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : ''}
+                        ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="popup-img" onerror="imgFail(this, '${imgFallback}')"></a>` : ''}
                         ${badgeHtml}<span class="popup-tag">${esc(d.category_norm || d.category)}</span><span class="popup-tag">${prec.label}</span>
                         <h4 class="popup-title">${esc(d.title)}</h4>
                         <div class="popup-desc" id="desc-popup-${safeId}">${safeDesc}</div>
@@ -611,7 +628,7 @@
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.innerHTML = `
-                    ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="card-img" loading="lazy" onerror="this.src='${imgFallback}'; this.onerror=null;"></a>` : '<div class="card-img" style="display:flex;align-items:center;justify-content:center;color:var(--secondary-text);">画像なし</div>'}
+                    ${imgSrc ? `<a href="${link}" target="_blank" title="クリックで元の画像/ページを開く"><img src="${imgSrc}" class="card-img" loading="lazy" onerror="imgFail(this, '${imgFallback}')"></a>` : '<div class="card-img" style="display:flex;align-items:center;justify-content:center;color:var(--secondary-text);">画像なし</div>'}
                     <div class="card-content">
                         <div style="margin-bottom:5px;">${badgeHtml}${coordBadge}<span class="popup-tag">${esc(d.category_norm || d.category)}</span></div>
                         <h4 class="card-title">${esc(d.title)}</h4>
