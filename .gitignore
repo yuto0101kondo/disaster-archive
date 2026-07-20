@@ -21,3 +21,4 @@ tools/hinagiku_survey_result.json
 .venv/
 raw/
 images/
+raw/gcs_transfer/
